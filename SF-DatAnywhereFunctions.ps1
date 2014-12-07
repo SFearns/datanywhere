@@ -1,7 +1,13 @@
+# This is my first attempt at using my own Objects and global variables.
+# The idea was that if I use a global variable I can reduce the number of parameters required
+# for the functions.
 $Global:CurrentDNServer=New-Object -TypeName PSObject
 Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name ClientVersion -Value "2.2.1.54"
 Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name DNServiceUser -Value "TESTDOMAIN.local\sfearns"
 Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name DNServicePassword -Value "Password1234"
+
+# The following are a set of variables which are used by this module or
+# are useful for parameter passing.
 $vDNAccessMask=@{Read=1;Write=2;CreateFolder=4;Delete=8;ShareRead=16;ShareWrite=32;ShareReadWithNested=64;ShareWriteWithNested=128}
 $vDNClientTypes=@{Unknown=0;Windows=1;MAC=2;Android=3;iOS=4;Web=5}
 $vDNOSType=@{Windows=2;MAC=4;Andoid=8;iPAD=32;iPhone=64}
@@ -9,14 +15,18 @@ $vDNRolePermissionMask=@{UserAccess=1;AccessSharedContent=2;Administrator=4;Down
 $vDNRootState=@{Available=0;Unavailable=1}
 $vDNFolderInfoType=@{Folder=1;File=2}
 $vDNIdentity=@{User=0;Group=1;DLGroup=2;Property=3;Contact=4;Domain=5}
+$vDNRecipientMatching=@{AND=0;OR=1}
 #$vDNPublicWorkspaceRules=@()
+$vDNUserGroupRulesOperator=@{Include=0;Exclude=1}
 $vDNUserGroupRulesUsers=@{DisplayName=$null;DomainName=$null;Email=$null;SID=$null;Type=$null}
 $vDNUserGroupRulesGroups=@{DisplayName=$null;DomainName=$null;SID=$null;Type=$null}
-$vDNUserGroupRules=@{Users=$vDNUserGroupRulesUsers;Groups=$vDNUserGroupRulesGroups;Operator=$vDNUserGroupRulesOperator}
+$vDNUserGroupRules=@{Users=$vDNUserGroupRulesUsers;Groups=$vDNUserGroupRulesGroups;Operator=$vDNUserGroupRulesOperator.Include}
 
-
-function New-TrustAllCertsPolicy {
+# On my 5 user test environment I am using a self signed certificate and the following
+# function gets around PowerShell not working with those.
+# It is not my code and was borrowed / recycled from:
 # http://stackoverflow.com/questions/11696944/powershell-v3-invoke-webrequest-https-error
+function New-TrustAllCertsPolicy {
 add-type @"
     using System.Net;
     using System.Security.Cryptography.X509Certificates;
@@ -207,6 +217,24 @@ function Set-vDNRootFolder {
     Return $Result
 }
 
+function Get-vDNRootAllFolders {
+    [CmdletBinding()]
+    Param([Parameter(Mandatory=$false)] [string]$DNServiceUser=$Global:CurrentDNServer.DNServiceUser,
+          [Parameter(Mandatory=$false)] [string]$DNServicePassword=$Global:CurrentDNServer.DNServicePassword,
+          [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
+    if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
+        $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/admin/Root/All?BaseUNCPath=") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
+        if ($Part1.ReturnCode -ne 0){
+            Write-Host "ERROR: Unable to list roots (/Root/All)" -ForegroundColor Red -BackgroundColor Black
+        }
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+    } else {
+        Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+    }
+    Return $Part1
+}
+
 function Get-vDNRootFolders {
     [CmdletBinding()]
     Param([Parameter(Mandatory=$false)] [string]$DNServiceUser=$Global:CurrentDNServer.DNServiceUser,
@@ -259,22 +287,42 @@ function New-vDNWorkspacePublic {
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL,
           [Parameter(Mandatory=$true)]  [string]$Name,
           [Parameter(Mandatory=$false)] [string]$Description=$null,
-          [Parameter(Mandatory=$false)] [string]$CustomOwner='null',
+          [Parameter(Mandatory=$false)] [array]$CustomOwner=$null,
           [Parameter(Mandatory=$false)] [boolean]$IsForced=$true,
           [Parameter(Mandatory=$false)] [boolean]$IsEveryone=$false,
           [Parameter(Mandatory=$false)] [boolean]$IsIncludeHomeFolders=$false,
-          [Parameter(Mandatory=$false)] [int]$RecipientMatching=1,
-          [Parameter(Mandatory=$false)] [array]$AdPropertyRules='[]',
-          [Parameter(Mandatory=$false)] [array]$UserGroupRules='[]')
-    Write-Host "This function is still a WIP - Need to transfer Arrays"
+          [Parameter(Mandatory=$false)] [int]$RecipientMatching=$vDNRecipientMatching.AND,
+          [Parameter(Mandatory=$false)] [array]$AdPropertyRules=$null,
+          [Parameter(Mandatory=$true)]  [array]$UserGroupRules)
+    $Result = $false
+    # Validate some of the parameters
+    if (!$vDNRecipientMatching.ContainsValue($RecipientMatching)) {
+        Write-Host "ERROR: Parameter -RecipientMatching is invalid" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+        return $Result
+    }
     if ($Global:CurrentDNServer.Connected -eq $True) {
-        $Result = $false
-        $Body = @{"PublicWorkspaceData"=@{
-            "PublicWorkspaceRules"=@{"AdPropertyRules"=$AdPropertyRules;"UserGroupRules"=$UserGroupRules};
-            "Name"=$Name;"Description"=$Description;
-            "CustomeOwner"=$CustomeOwner;"RecipientMatching"=$RecipientMatching;
-            "IsForced"=$IsForced;"IsEveryone"=$IsEveryone;
-            "IsIncludeHomeFolders"=$IsIncludeHomeFolders}} | ConvertTo-Json -Depth 10 
+        $Body = '{"PublicWorkspaceData":{"PublicWorkspaceRules":{"AdPropertyRules":'
+        if ($AdPropertyRules) {
+            $Body += ($UserGroupRules | ConvertTo-Json -Depth 10) + ',"UserGroupRules":'
+        } else {
+            $Body += '[],"UserGroupRules":'
+        }
+        if ($UserGroupRules.Count -eq 1) {
+            $Body += '[' + ($UserGroupRules | ConvertTo-Json -Depth 10 -Compress) + ']},"Name":'
+        } else {
+            $Body += ($UserGroupRules | ConvertTo-Json -Depth 10 -Compress) + '},"Name":'
+        }
+        $Body += ($Name | ConvertTo-Json -Depth 10 -Compress) + ',"Description":' + ($Description | ConvertTo-Json -Depth 10 -Compress) + ',"CustomeOwner":'
+        if ($CustomOwner.Count -eq 0) {
+            $Body += 'null,"RecipientMatching":'
+        } else {
+            $Body += ($CustomOwner | ConvertTo-Json -Depth 10 -Compress) + ',"RecipientMatching":'
+        }
+        $Body += ($RecipientMatching | ConvertTo-Json -Depth 10 -Compress) + ',"IsForced":' + ($IsForced | ConvertTo-Json -Depth 10 -Compress) + ',"IsEveryone":' + ($IsEveryone | ConvertTo-Json -Depth 10 -Compress) + ',"IsIncludeHomeFolders":' + ($IsIncludeHomeFolders | ConvertTo-Json -Depth 10 -Compress) + '}}'
+
+        # Corrections needed for some items
+        $Body = $Body.Replace('"Groups":""','"Groups":[]').Replace('"Groups":null','"Groups":[]').Replace('"Users":""','"Users":[]').Replace('"Users":null','"Users":[]')
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/Workspace/CreatePublic") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -eq 0){
             $Result=$true
@@ -313,12 +361,12 @@ function Get-vDNWorkspaceAll {
     [CmdletBinding()]
     Param([Parameter(Mandatory=$false)] [boolean]$PrivateWorkspace=$true,
           [Parameter(Mandatory=$false)] [boolean]$AcceptedReceivedPublicWorkspace=$true,
-          [Parameter(Mandatory=$false)] [boolean]$UnacceptedReceivedPublicWorkspace=$true,
-          [Parameter(Mandatory=$false)] [boolean]$AllOwnedPublicWorkspaces=$true,
-          [Parameter(Mandatory=$false)] [boolean]$MyOwnedPublicWorkspaces=$true,
+          [Parameter(Mandatory=$false)] [boolean]$UnacceptedReceivedPublicWorkspace=$false,
+          [Parameter(Mandatory=$false)] [boolean]$AllOwnedPublicWorkspace=$false,
+          [Parameter(Mandatory=$false)] [boolean]$MyOwnedPublicWorkspace=$true,
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
-        $Body = @{"PrivateWorkspace"=$PrivateWorkspace;"AcceptedReceivedPublicWorkspace"=$AcceptedReceivedPublicWorkspace;"UnacceptedReceivedPublicWorkspace"=$UnacceptedReceivedPublicWorkspace;"AllOwnedPublicWorkspaces"=$AllOwnedPublicWorkspaces;"MyOwnedPublicWorkspaces"=$MyOwnedPublicWorkspaces} | ConvertTo-Json
+        $Body = @{"PrivateWorkspace"=$PrivateWorkspace;"AcceptedReceivedPublicWorkspace"=$AcceptedReceivedPublicWorkspace;"MyOwnedPublicWorkspace"=$MyOwnedPublicWorkspace;"UnacceptedReceivedPublicWorkspace"=$UnacceptedReceivedPublicWorkspace;"AllOwnedPublicWorkspace"=$AllOwnedPublicWorkspace} | ConvertTo-Json
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/V3/Workspace/All") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to list workspaces (/Workspace/All)" -ForegroundColor Red -BackgroundColor Black
@@ -348,19 +396,20 @@ function Get-vDNWorkspacePrivate {
     Return $Part1
 }
 
-function New-vDNWorkspaceRoot {
+function New-vDNWorkspaceItem {
     [CmdletBinding()]
     Param([Parameter(Mandatory=$true)]  [int]$WorkspaceID,
           [Parameter(Mandatory=$true)]  [int]$RootID,
-          [Parameter(Mandatory=$false)] [int]$RootType=1,
+          [Parameter(Mandatory=$false)] [int]$RootType=$vDNFolderInfoType.Folder,
           [Parameter(Mandatory=$true)]  [string]$RootName,
           [Parameter(Mandatory=$false)] [boolean]$Nested=$true,
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
-        $Body = @{"WorkspaceID"=$WorkspaceID;"WorkspaceItems"=@{"Name"=$RootName;"Path"="";"RootID"=$RootID;"Type"=$RootType;"IsNested"=$Nested}} | ConvertTo-Json
+        $Body = @{"WorkspaceID"=$WorkspaceID;"WorkspaceItems"=@{"Name"=$RootName;"Path"="";"RootID"=$RootID;"Type"=$RootType;"IsNested"=$Nested}} | ConvertTo-Json -Compress -Depth 10
+        $Body = $Body.Replace('"WorkspaceItems":{','"WorkspaceItems":[{').Replace('},"WorkspaceID":','}],"WorkspaceID":')
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/Workspace/AddItems") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
-            Write-Host "ERROR: Unable to list workspaces (/Workspace/All)" -ForegroundColor Red -BackgroundColor Black
+            Write-Host "ERROR: Unable to add item to workspace (/Workspace/AddItems)" -ForegroundColor Red -BackgroundColor Black
         }
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
     } else {
