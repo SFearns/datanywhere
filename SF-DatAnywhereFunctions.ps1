@@ -42,6 +42,28 @@ add-type @"
 }
 
 function Connect-vDNServer {
+<# 
+.SYNOPSIS
+    Connect to a DatAnywhere Server
+.DESCRIPTION
+    Connect to a DatAnywhere Server.
+
+    Required Parameters are:
+        -URL                 [string]
+        -LoginID             [string]
+        -Password            [string]
+
+    Optional Parameters are:
+        None
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+    Connect-vDNServer -URL https://192.168.36.50 -LoginID 'sfearns' -Password Password1234
+#>
     [CmdletBinding()]
     Param([Parameter(Mandatory=$true)] [string]$URL,
           [Parameter(Mandatory=$true)] [string]$LoginID,
@@ -49,7 +71,7 @@ function Connect-vDNServer {
     $Body = '[{"Key":"client_type","Value":"1"},{"Key":"client_version","Value":'+$Global:CurrentDNServer.ClientVersion+'}]'
     $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/auth/V2/Begin?userName=$LoginID&clientName=WinClient&Root=1") -Method POST -Body $Body -ContentType 'application/json' -SessionVariable $DNSession
     if ($Part1.ReturnCode -eq 0){
-        $Body = @{InputParam=$Password;RootID=0} | ConvertTo-Json
+        $Body = @{InputParam=$Password;RootID=0} | ConvertTo-Json -Compress -Depth 10
         $Part2 = Invoke-RestMethod -Uri ($URL+"/rest/auth/V2/Continue") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Part1.Data.AuthToken}
         if ($Part2.ReturnCode -eq 0){
             $Part3 = Invoke-RestMethod -Uri ($URL+"/rest/auth/LogonInfo") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Part1.Data.AuthToken}
@@ -73,22 +95,48 @@ function Connect-vDNServer {
         }
     } else {
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name Connected -Value False
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
         Write-Host "ERROR: Unable to connect (/Begin)" -ForegroundColor Red -BackgroundColor Black
     }
 }
 
 function Disconnect-vDNServer {
+<# 
+.SYNOPSIS
+    Disconnect from a previously connected server
+.DESCRIPTION
+    Disconnect from a previously connected server
+
+
+    Required Parameters are:
+        None
+
+    Optional Parameters are:
+        -DNServiceUser       [string] Defaults to $Global:CurrentDNServer.DNServiceUser
+        -DNServicePassword   [string] Defaults to $Global:CurrentDNServer.DNServicePassword
+        -URL                 [string] Defaults to the last connected server
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+    Disconnect-vDNServer
+    Disconnect-vDNServer -URL http://192.168.1.50
+#>
     [CmdletBinding()]
-    Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
+    Param([Parameter(Mandatory=$false)] [string]$DNServiceUser=$Global:CurrentDNServer.DNServiceUser,
+          [Parameter(Mandatory=$false)] [string]$DNServicePassword=$Global:CurrentDNServer.DNServicePassword,
+          [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if ($Global:CurrentDNServer.Connected -eq $True) {
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/auth/Logout") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -eq 0){
             $Global:CurrentDNServer.Connected=$False
-            Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+            Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
         } else {
             Write-Host "ERROR: Unable to disconnect (/Logout)" -ForegroundColor Red -BackgroundColor Black
-            Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+            Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
         }
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
@@ -97,6 +145,30 @@ function Disconnect-vDNServer {
 }
 
 function Get-vDNIdentities {
+<# 
+.SYNOPSIS
+    Returns DatAnywhere identities which can be users, groups or AD attributes.
+.DESCRIPTION
+    Returns DatAnywhere identities which can be users, groups or AD attributes.
+
+    Required Parameters are:
+        -SearchString        [string]
+
+    Optional Parameters are:
+        -DNServiceUser       [string] Defaults to $Global:CurrentDNServer.DNServiceUser
+        -DNServicePassword   [string] Defaults to $Global:CurrentDNServer.DNServicePassword
+        -NumOfObjects        [int]    Defaults to 100 objects returned
+        -QueryFilter         [int]    Defaults to 1 (User)
+        -URL                 [string] Defaults to the last connected server
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+    Get-vDNIdentities -SearchString sfearns
+#>
     [CmdletBinding()]
     Param([Parameter(Mandatory=$false)] [string]$DNServiceUser=$Global:CurrentDNServer.DNServiceUser,
           [Parameter(Mandatory=$false)] [string]$DNServicePassword=$Global:CurrentDNServer.DNServicePassword,
@@ -109,7 +181,7 @@ function Get-vDNIdentities {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Identities (/DNIdentities/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -118,16 +190,34 @@ function Get-vDNIdentities {
 }
 
 function Get-vDNCredentials {
+<# 
+.SYNOPSIS
+    Returns the current users credentials.
+.DESCRIPTION
+    Returns the current users credentials.
+
+    Required Parameters are:
+        None
+
+    Optional Parameters are:
+        -URL                 [string] Defaults to the last connected server
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+    Get-vDNIdentities -SearchString sfearns
+#>
     [CmdletBinding()]
-    Param([Parameter(Mandatory=$false)] [string]$DNServiceUser=$Global:CurrentDNServer.DNServiceUser,
-          [Parameter(Mandatory=$false)] [string]$DNServicePassword=$Global:CurrentDNServer.DNServicePassword,
-          [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
+    Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/admin/Credentials/All") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/Credentials/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -149,14 +239,14 @@ function New-vDNRootFolder {
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if ($Global:CurrentDNServer.Connected -eq $True) {
         $Result = $false
-        $Body = @{"User"=$DNServiceUser;"Password"=$DNServicePassword;"Data"=@{"Name"=$RootName;"Path"=$RootPath;"SyncManagerWid"=1;"ItemType"=1;"IncludeNested"=$IncludeNested;"FilerID"=0;"EnforceSharePermissions"=$true;"PreviewOnly"=$false}} | ConvertTo-Json
+        $Body = @{"User"=$DNServiceUser;"Password"=$DNServicePassword;"Data"=@{"Name"=$RootName;"Path"=$RootPath;"SyncManagerWid"=1;"ItemType"=1;"IncludeNested"=$IncludeNested;"FilerID"=0;"EnforceSharePermissions"=$true;"PreviewOnly"=$false}} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/admin/Root/Add?UploadEnabled=$UploadEnabled&DownloadEnabled=$DownloadEnabled&NestedUpload=$NestedUpload&NestedDownload=$NestedDownload") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -eq 0){
             $Result=$true
         } else {
             Write-Host "ERROR: Unable to make root (/Root/Add)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -179,7 +269,7 @@ function Remove-vDNRootFolder {
         } else {
             Write-Host "ERROR: Unable to remove root (/Root/Remove)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -202,14 +292,14 @@ function Set-vDNRootFolder {
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if ($Global:CurrentDNServer.Connected -eq $True) {
         $Result = $false
-        $Body = @{"User"=$DNServiceUser;"Password"=$DNServicePassword;"Data"=@{"Name"=$RootName;"Path"=$RootPath;"ID"=$ID;"SyncManagerWid"=1;"ItemType"=1;"IncludeNested"=$IncludeNested;"FilerID"=0;"EnforceSharePermissions"=$true;"PreviewOnly"=$false}} | ConvertTo-Json
+        $Body = @{"User"=$DNServiceUser;"Password"=$DNServicePassword;"Data"=@{"Name"=$RootName;"Path"=$RootPath;"ID"=$ID;"SyncManagerWid"=1;"ItemType"=1;"IncludeNested"=$IncludeNested;"FilerID"=0;"EnforceSharePermissions"=$true;"PreviewOnly"=$false}} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/admin/Root/Update?UploadEnabled=$UploadEnabled&DownloadEnabled=$DownloadEnabled&NestedUpload=$NestedUpload&NestedDownload=$NestedDownload") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -eq 0){
             $Result=$true
         } else {
             Write-Host "ERROR: Unable to make root (/Root/Update)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -227,7 +317,7 @@ function Get-vDNRootAllFolders {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to list roots (/Root/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -242,12 +332,12 @@ function Get-vDNRootFolders {
           [Parameter(Mandatory=$true)]  [string]$RootPath,
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
-        $Body = @{"User"=$DNServiceUser;"Password"=$DNServicePassword} | ConvertTo-Json
+        $Body = @{"User"=$DNServiceUser;"Password"=$DNServicePassword} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/admin/FolderItem/All?FolderPath=$RootPath&SyncmanagerID=1&RootID=0") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to list roots (/FolderItem/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -265,14 +355,14 @@ function New-vDNWorkspacePrivate {
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if ($Global:CurrentDNServer.Connected -eq $True) {
         $Result = $false
-        $Body = @{"PrivateWorkspaceData"=@{"Name"=$WorkspaceName;"IsIncludeHomeFolders"=$IncludeHomeFolders}} | ConvertTo-Json
+        $Body = @{"PrivateWorkspaceData"=@{"Name"=$WorkspaceName;"IsIncludeHomeFolders"=$IncludeHomeFolders}} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/Workspace/CreatePrivate") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -eq 0){
             $Result=$true
         } else {
             Write-Host "ERROR: Unable to make private workspace (/Workspace/CreatePrivate)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -329,7 +419,7 @@ function New-vDNWorkspacePublic {
         } else {
             Write-Host "ERROR: Unable to make private workspace (/Workspace/CreatePublic)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -344,12 +434,12 @@ function Get-vDNWorkspaceSingle {
           [Parameter(Mandatory=$false)] [boolean]$IncludeOwnerData=$true,
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
-        $Body = @{"WorkspaceItemsList"=$WorkspaceItemsList;"IncludeOwnerData"=$IncludeOwnerData} | ConvertTo-Json
+        $Body = @{"WorkspaceItemsList"=$WorkspaceItemsList;"IncludeOwnerData"=$IncludeOwnerData} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/V3/Workspace/ID=$WorkspaceID") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to list workspaces (/Workspace/ID)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -366,12 +456,12 @@ function Get-vDNWorkspaceAll {
           [Parameter(Mandatory=$false)] [boolean]$MyOwnedPublicWorkspace=$true,
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
-        $Body = @{"PrivateWorkspace"=$PrivateWorkspace;"AcceptedReceivedPublicWorkspace"=$AcceptedReceivedPublicWorkspace;"MyOwnedPublicWorkspace"=$MyOwnedPublicWorkspace;"UnacceptedReceivedPublicWorkspace"=$UnacceptedReceivedPublicWorkspace;"AllOwnedPublicWorkspace"=$AllOwnedPublicWorkspace} | ConvertTo-Json
+        $Body = @{"PrivateWorkspace"=$PrivateWorkspace;"AcceptedReceivedPublicWorkspace"=$AcceptedReceivedPublicWorkspace;"MyOwnedPublicWorkspace"=$MyOwnedPublicWorkspace;"UnacceptedReceivedPublicWorkspace"=$UnacceptedReceivedPublicWorkspace;"AllOwnedPublicWorkspace"=$AllOwnedPublicWorkspace} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/V3/Workspace/All") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to list workspaces (/Workspace/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -383,12 +473,12 @@ function Get-vDNWorkspacePrivate {
     [CmdletBinding()]
     Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
-        $Body = @{"PrivateWorkspace"=$true;"AcceptedReceivedPublicWorkspace"=$true;"MyOwnedPublicWorkspace"=$false} | ConvertTo-Json
+        $Body = @{"PrivateWorkspace"=$true;"AcceptedReceivedPublicWorkspace"=$true;"MyOwnedPublicWorkspace"=$false} | ConvertTo-Json -Compress -Depth 10
         $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/V3/Workspace/All") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to list workspaces (/Workspace/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -404,6 +494,12 @@ function New-vDNWorkspaceItem {
           [Parameter(Mandatory=$true)]  [string]$RootName,
           [Parameter(Mandatory=$false)] [boolean]$Nested=$true,
           [Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL)
+    # Validate some of the parameters
+    if (!$vDNFolderInfoType.ContainsValue($RootType)) {
+        Write-Host "ERROR: Parameter -RootType is invalid" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+        return $Result
+    }
     if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
         $Body = @{"WorkspaceID"=$WorkspaceID;"WorkspaceItems"=@{"Name"=$RootName;"Path"="";"RootID"=$RootID;"Type"=$RootType;"IsNested"=$Nested}} | ConvertTo-Json -Compress -Depth 10
         $Body = $Body.Replace('"WorkspaceItems":{','"WorkspaceItems":[{').Replace('},"WorkspaceID":','}],"WorkspaceID":')
@@ -411,7 +507,7 @@ function New-vDNWorkspaceItem {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to add item to workspace (/Workspace/AddItems)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -419,7 +515,6 @@ function New-vDNWorkspaceItem {
     Return $Part1
 }
 
-# WIP
 function Remove-vDNWorkspaceFolder {
     [CmdletBinding()]
     Param([Parameter(Mandatory=$true)]  [string]$RootID,
@@ -429,7 +524,7 @@ function Remove-vDNWorkspaceFolder {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to remove workspace (/Root/Remove)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -447,7 +542,7 @@ function Get-vDNConfig {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/Config/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -465,7 +560,7 @@ function Get-vDNLanguages {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/Languages/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -483,7 +578,7 @@ function Get-vDNADProperty {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/AdProperties/All)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -502,7 +597,7 @@ function New-vDNADProperty {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/AdProperties/Add)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -522,7 +617,7 @@ function Set-vDNADProperty {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/AdProperties/Rename)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -541,7 +636,7 @@ function Remove-vDNADProperty {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/AdProperties/Remove)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -565,7 +660,7 @@ function Get-vDNResourceInfo {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Resource Info (/Resource/Info)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -606,7 +701,7 @@ function Get-vDNConfigSingle {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/Configuration?key)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -626,7 +721,7 @@ function Set-vDNConfigSingle {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Credentials (/Config/Add)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -644,7 +739,7 @@ function Get-vDNInfo {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Resource Info (/license/GetInfo)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -662,7 +757,7 @@ function Get-vDNToken {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Resource Info (/license/GetToken)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -682,7 +777,7 @@ function Set-vDNUpdateAutomatic {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Resource Info (/license/TryUpdateAutomatic)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -703,7 +798,7 @@ function Set-vDNUpdateManual {
         if ($Part1.ReturnCode -ne 0){
             Write-Host "ERROR: Unable to get Resource Info (/license/TryUpdateManual)" -ForegroundColor Red -BackgroundColor Black
         }
-        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $Part1
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
     } else {
         Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
         Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
@@ -711,9 +806,191 @@ function Set-vDNUpdateManual {
     Return $Part1
 }
 
+function Get-vDNChildItem {
+<# 
+.SYNOPSIS
+    Get a list of items contained within a specific folder
+.DESCRIPTION
+    Get a list of items contained within a specific folder
 
+    Required Parameters are:
+        -FolderPath  [string]
+        -RootID      [int]
 
+    Optional Parameters are:
+        -URL         [string]
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+#>
+    [CmdletBinding()]
+    Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL,
+          [Parameter(Mandatory=$false)] [string]$FolderPath='',
+          [Parameter(Mandatory=$true)]  [int]$RootID)
+    if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
+        $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/Folder/Items?FolderPath=$folderPath&Root=$RootID") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
+        if ($Part1.ReturnCode -ne 0){
+            Write-Host "ERROR: Unable to get Resource Info (/Folder/Items)" -ForegroundColor Red -BackgroundColor Black
+        }
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
+    } else {
+        Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+    }
+    Return $Part1
+}
 
+function Remove-vDNChildItem {
+<# 
+.SYNOPSIS
+    Remove an item contained within a specific folder
+.DESCRIPTION
+    Remove an item contained within a specific folder
+
+    Required Parameters are:
+        -Path        [string]
+        -Name        [string]
+        -RootID      [int]
+        -Revision    [long]
+        -Type        [int]
+
+    Optional Parameters are:
+        -URL         [string]
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+#>
+    [CmdletBinding()]
+    Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL,
+          [Parameter(Mandatory=$true)]  [string]$Path,
+          [Parameter(Mandatory=$true)]  [string]$Name,
+          [Parameter(Mandatory=$true)]  [long]$Revision,
+          [Parameter(Mandatory=$true)]  [int]$Type,
+          [Parameter(Mandatory=$true)]  [int]$RootID)
+    if (!$vDNFolderInfoType.ContainsValue($Type)) {
+        Write-Host "ERROR: Invalid Type (/Item/Delete)" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+        Return $null
+    }
+    if (($Path -eq '\') -or ($Path -eq '.')) {
+        $FolderPath=''+$Name
+    } else {
+        $FolderPath=($Path+'\'+$Name).Replace('\\','\')
+    }
+    if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
+        $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/V2/Item/Delete?rootID=$RootID&type=$Type&revision=$Revision&path=$FolderPath") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
+        if ($Part1.ReturnCode -ne 0){
+            Write-Host "ERROR: Unable to get Resource Info (/Item/Delete)" -ForegroundColor Red -BackgroundColor Black
+        }
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
+    } else {
+        Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+    }
+    Return $Part1
+}
+
+function New-vDNFolderItem {
+<# 
+.SYNOPSIS
+    Create a new folder within the RootID
+.DESCRIPTION
+    Create a new folder within the RootID
+
+    Required Parameters are:
+        -Path        [string]
+        -RootID      [int]
+
+    Optional Parameters are:
+        -URL         [string]
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+#>
+    [CmdletBinding()]
+    Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL,
+          [Parameter(Mandatory=$true)]  [string]$Path,
+          [Parameter(Mandatory=$true)]  [int]$RootID)
+    if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
+        $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/client/Folder/Create?FolderPath=$Path&Root=$RootID") -Method POST -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
+        if ($Part1.ReturnCode -ne 0){
+            Write-Host "ERROR: Unable to crrreate folder (/Folder/Create)" -ForegroundColor Red -BackgroundColor Black
+        }
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
+    } else {
+        Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+    }
+    Return $Part1
+}
+
+function New-vDNChildItem {
+<# 
+.SYNOPSIS
+    Upload a file to a RootID & Path
+.DESCRIPTION
+    Upload a file to a RootID & Path
+
+    Required Parameters are:
+        -SourcePath           [string]
+        -Path                 [string]
+        -FileName             [string]
+        -RootID               [int]
+
+    Optional Parameters are:
+        -URL                  [string]
+        -DiffFileSize         [long]      Default is $null
+        -FileSize             [long]      Default is -1 (Unknown Length)
+        -Revision             [long]      Default is 0  (New File)
+        -TransferCompleteFile [int]       Default is 1
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found in the Varonis DatAnywhere API manual
+    http://www.varonis.com
+.EXAMPLE
+#>
+    [CmdletBinding()]
+    Param([Parameter(Mandatory=$false)] [string]$URL=$Global:CurrentDNServer.URL,
+          [Parameter(Mandatory=$true)]  [string]$SourcePath,
+          [Parameter(Mandatory=$true)]  [string]$TargetPath,
+          [Parameter(Mandatory=$true)]  [string]$FileName,
+          [Parameter(Mandatory=$false)] [long]$DiffFileSize=$null,
+          [Parameter(Mandatory=$false)] [long]$FileSize=-1,
+          [Parameter(Mandatory=$false)] [long]$Revision=0,
+          [Parameter(Mandatory=$false)] [int]$TransferCompleteFile=1,
+          [Parameter(Mandatory=$true)]  [int]$RootID)
+    if (($Global:CurrentDNServer.Connected -eq $True)-and($URL -ne $null)) {
+        $CreateTime = (Get-ChildItem $SourcePath).CreationTime.Ticks
+        $Body = @{"Revision"=$Revision;"FilePath"=$TargetPath;"FileName"=$FileName;"FileSize"=$FileSize;"CreateTime"=$CreateTime}
+        if ($DiffFileSize){$Body+=@{"DiffFileSize"=$DiffFileSize}}
+        $Body = ($Body | ConvertTo-Json -Compress -Depth 10)
+        $Part1 = Invoke-RestMethod -Uri ($URL+"/rest/transfer/V2/Upload/Query?root=$RootID&type=$TransferCompleteFile") -Method POST -Body $Body -ContentType 'application/json' -Headers @{"AuthorizationToken"=$Global:CurrentDNServer.AuthToken}
+        if ($Part1.ReturnCode -ne 0){
+            Write-Host "ERROR: Unable to start the upload (/Upload/Query)" -ForegroundColor Red -BackgroundColor Black
+            Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1}
+        } else {
+            Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value @{"Part1"=$Part1;"Part2"=$Part2;"Part3"=$Part3}
+        }
+    } else {
+        Write-Host "ERROR: Not connected to a DN Server" -ForegroundColor Red -BackgroundColor Black
+        Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name VaronisRESTReply -Value $null
+    }
+    Return $Part1
+}
 
 
 
