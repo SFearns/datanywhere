@@ -2,6 +2,10 @@
 # The idea was that if I use a global variable I can reduce the number of parameters required
 # for the functions.
 $Global:CurrentDNServer=New-Object -TypeName PSObject
+Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name ModuleVersion -Value "0.1"
+Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name ModuleDated -Value "14th Dec 2014"
+Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name ModuleAuthor -Value "Stephen Fearns"
+
 Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name ClientVersion -Value "2.2.1.54"
 Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name DNServiceUser -Value "TESTDOMAIN.local\sfearns"
 Add-Member -InputObject $Global:CurrentDNServer -Force -MemberType NoteProperty -Name DNServicePassword -Value "Password1234"
@@ -22,9 +26,18 @@ $vDNUserGroupRulesUsers=@{DisplayName=$null;DomainName=$null;Email=$null;SID=$nu
 $vDNUserGroupRulesGroups=@{DisplayName=$null;DomainName=$null;SID=$null;Type=$null}
 $vDNUserGroupRules=@{Users=$vDNUserGroupRulesUsers;Groups=$vDNUserGroupRulesGroups;Operator=$vDNUserGroupRulesOperator.Include}
 
-# On my 5 user test environment I am using a self signed certificate and the following
-# function gets around PowerShell not working with those.
-# It is not my code and was borrowed / recycled from:
+Write-Host "`n`tvDatAnywhere Module"$Global:CurrentDNServer.ModuleVersion"-"$Global:CurrentDNServer.ModuleDated
+Write-Host ""
+Write-Host "Make a connection to a DatAnywhere server with: " -NoNewline
+Write-Host "Connect-vDNServer" -ForegroundColor Yellow
+Write-Host "Disconnect from a DatAnywhere server with: " -NoNewline
+Write-Host "Disconnect-vDNServer" -ForegroundColor Yellow
+Write-Host "List all available commands with: " -NoNewline
+Write-Host "Get-vDNCommands" -ForegroundColor Yellow
+
+# On my 5 user test environment I am using a self signed certificate and the
+# following function gets around PowerShell not really working with these.
+# This code was borrowed / recycled from:
 # http://stackoverflow.com/questions/11696944/powershell-v3-invoke-webrequest-https-error
 function New-TrustAllCertsPolicy {
 add-type @"
@@ -59,8 +72,10 @@ function Connect-vDNServer {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
     Connect-vDNServer -URL https://192.168.36.50 -LoginID 'sfearns' -Password Password1234
 #>
@@ -107,7 +122,6 @@ function Disconnect-vDNServer {
 .DESCRIPTION
     Disconnect from a previously connected server
 
-
     Required Parameters are:
         None
 
@@ -119,8 +133,10 @@ function Disconnect-vDNServer {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
     Disconnect-vDNServer
     Disconnect-vDNServer -URL http://192.168.1.50
@@ -144,6 +160,34 @@ function Disconnect-vDNServer {
     }
 }
 
+function Get-vDNCommands {
+<# 
+.SYNOPSIS
+    Returns a list of all the vDN commands
+.DESCRIPTION
+    Returns a list of all the vDN commands
+
+    Parameters are:
+        none
+.NOTES
+    File Name  : SF-DatAnywhereFunctions.ps1 
+    Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
+.LINK
+    More information on this can be found at the following sites:
+    http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
+.EXAMPLE
+    Get-vDNCommands
+    Description
+    This command lists all the commands available in the module
+#>
+    [CmdletBinding()]
+    Param ()
+
+    Get-Command *-vDN* -CommandType Function | Sort-Object Name
+}
+
 function Get-vDNIdentities {
 <# 
 .SYNOPSIS
@@ -164,8 +208,10 @@ function Get-vDNIdentities {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
     Get-vDNIdentities -SearchString sfearns
 #>
@@ -205,8 +251,10 @@ function Get-vDNCredentials {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
     Get-vDNIdentities -SearchString sfearns
 #>
@@ -823,8 +871,10 @@ function Get-vDNChildItem {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
 #>
     [CmdletBinding()]
@@ -864,8 +914,10 @@ function Remove-vDNChildItem {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
 #>
     [CmdletBinding()]
@@ -915,8 +967,10 @@ function New-vDNFolderItem {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
 #>
     [CmdletBinding()]
@@ -936,7 +990,7 @@ function New-vDNFolderItem {
     Return $Part1
 }
 
-function New-vDNChildItem {
+function New-vDNItem {
 <# 
 .SYNOPSIS
     Upload a file to a RootID & Path
@@ -959,8 +1013,10 @@ function New-vDNChildItem {
     File Name  : SF-DatAnywhereFunctions.ps1 
     Author     : Stephen Fearns - http://uk.linkedin.com/in/stephenfearns
 .LINK
-    More information on this can be found in the Varonis DatAnywhere API manual
+    More information on this can be found at the following sites:
     http://www.varonis.com
+    https://connect.varonis.com/welcome
+    https://datanywhere.codeplex.com
 .EXAMPLE
 #>
     [CmdletBinding()]
